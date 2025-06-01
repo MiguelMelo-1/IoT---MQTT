@@ -5,15 +5,11 @@ import paho.mqtt.client as mqtt
 import json
 from datetime import datetime
 import pandas as pd
-import threading # Para gerir a thread MQTT
+import threading
 
 # --- Configuração da Aplicação Flask ---
 app = Flask(__name__)
-# A chave secreta é necessária para segurança de sessão do Flask-SocketIO
-# Em produção, usa uma chave mais complexa e segura (variável de ambiente)
 app.config['SECRET_KEY'] = 'uma_chave_secreta_muito_segura_e_longa_para_o_aviario_2025'
-# Configura o SocketIO para permitir conexões de qualquer origem (útil para desenvolvimento)
-# Em produção, restringe para o teu domínio.
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # --- Configuração MQTT ---
@@ -24,24 +20,35 @@ TOPICOS_SUB = [
     "aviario/humidade",
     "aviario/luminosidade",
     "aviario/gas",
-    "aviario/ventoinha",
-    "aviario/janela",
+    "aviario/ventoinha", # Manter para receber o estado atual do atuador
+    "aviario/janela",    # Manter para receber o estado atual do atuador
 ]
-TOPICO_ATUADORES_CONTROLO = "aviario/atuadores/controlo" # Tópico para controlar atuadores
-TOPICO_ATUADORES_ESTADO_VENTOINHA = "aviario/atuadores/ventoinha_estado" # O ESP32 deve publicar aqui o estado atual
-TOPICO_ATUADORES_ESTADO_JANELA = "aviario/atuadores/janela_estado" # O ESP32 deve publicar aqui o estado atual
+TOPICO_ATUADORES_CONTROLO = "aviario/atuadores/controlo" # Tópico para controlar atuadores (geral, se usares)
+# Tópicos específicos para controlo que o ESP32 deve subscrever
+TOPICO_VENTOINHA_SET = "aviario/atuadores/ventoinha/set"
+TOPICO_JANELA_SET = "aviario/atuadores/janela/set"
+
+# Definir quais tópicos são de 'sensor' para o histórico.
+# Os tópicos de atuador que publicam o estado (aviario/ventoinha, aviario/janela)
+# não devem estar aqui, pois queremos que só os dados dos sensores
+# (temperatura, humidade, luminosidade, gás) gerem entradas de histórico.
+SENSOR_TOPICS_FOR_HISTORY = [
+    "aviario/temperatura",
+    "aviario/humidade",
+    "aviario/luminosidade",
+    "aviario/gas",
+]
+
 
 # --- Variáveis de Estado Global (Acessíveis pelo Thread MQTT e Flask) ---
-# Usamos um Lock para proteger 'current_sensor_data' e 'history_records'
-# de acessos simultâneos por diferentes threads.
 data_lock = threading.Lock()
 current_sensor_data = {
     "temperatura": None,
     "humidade": None,
     "luminosidade": None,
     "gas": None,
-    "ventoinha": None, # Estado atual do atuador (recebido do ESP32 ou localmente)
-    "janela": None,    # Estado atual do atuador (recebido do ESP32 ou localmente)
+    "ventoinha": None, # Estado atual do atuador (recebido do ESP32)
+    "janela": None,    # Estado atual do atuador (recebido do ESP32)
     "timestamp": None,
 }
 history_records = [] # Armazena dados para o CSV e gráficos
@@ -63,6 +70,7 @@ def on_message(client, userdata, msg):
 
     with data_lock: # Protege o acesso aos dados globais
         try:
+            # Atualiza os dados de todos os tipos (sensores e atuadores)
             if msg.topic == "aviario/temperatura":
                 current_sensor_data["temperatura"] = float(payload_str)
             elif msg.topic == "aviario/humidade":
@@ -70,8 +78,8 @@ def on_message(client, userdata, msg):
             elif msg.topic == "aviario/luminosidade":
                 current_sensor_data["luminosidade"] = int(payload_str)
             elif msg.topic == "aviario/gas":
-                # Assume 0 para "Não" e 1 para "Sim"
                 current_sensor_data["gas"] = bool(int(payload_str))
+            # Estes tópicos devem ser publicados pelo ESP32 com o estado real do atuador
             elif msg.topic == "aviario/ventoinha":
                 current_sensor_data["ventoinha"] = bool(int(payload_str))
             elif msg.topic == "aviario/janela":
@@ -79,11 +87,12 @@ def on_message(client, userdata, msg):
 
             current_sensor_data["timestamp"] = datetime.now().strftime("%H:%M:%S")
 
-            # --- Gerar Histórico ---
-            # Para o histórico, queremos um snapshot dos dados dos sensores
-            # quando eles estiverem disponíveis.
-            # Verificamos se os principais dados de sensor estão presentes antes de registrar
-            if all(current_sensor_data[k] is not None for k in ["temperatura", "humidade", "luminosidade", "gas"]):
+            # --- Gerar Histórico SOMENTE para dados de sensores ---
+            # Verifica se a mensagem veio de um dos tópicos de sensor definidos
+            # E se todos os dados de sensor (temperatura, humidade, luminosidade, gás) estão disponíveis
+            if msg.topic in SENSOR_TOPICS_FOR_HISTORY and \
+               all(current_sensor_data[k] is not None for k in ["temperatura", "humidade", "luminosidade", "gas"]):
+                
                 record = {
                     "Hora": current_sensor_data["timestamp"],
                     "Temperatura": current_sensor_data["temperatura"],
@@ -93,25 +102,34 @@ def on_message(client, userdata, msg):
                     "Ventoinhas_Estado": "Ligadas" if current_sensor_data["ventoinha"] else "Desligadas",
                     "Janelas_Estado": "Abertas" if current_sensor_data["janela"] else "Fechadas"
                 }
-                # Evitar duplicados se a mensagem for muito frequente e os dados não mudarem
-                if not history_records or history_records[-1] != record:
+                
+                # Evitar duplicados no histórico (ex: só adiciona se a hora ou temperatura mudou)
+                # Esta lógica é um pouco mais robusta para evitar entradas idênticas consecutivas.
+                if not history_records or \
+                   history_records[-1]["Hora"] != record["Hora"] or \
+                   history_records[-1]["Temperatura"] != record["Temperatura"] or \
+                   history_records[-1]["Humidade"] != record["Humidade"] or \
+                   history_records[-1]["Luminosidade"] != record["Luminosidade"] or \
+                   history_records[-1]["Gás"] != record["Gás"]:
+                    
                     history_records.append(record)
-                    # Opcional: Limitar o tamanho do histórico na memória para não consumir muita RAM
-                    # Ex: manter apenas os últimos 1000 registos
-                    # if len(history_records) > 1000:
+
+                    # Opcional: Limitar o tamanho do histórico na memória do backend para não consumir muita RAM
+                    # Se tiveres muitos dados e estiveres a guardar no CSV, podes querer limitar isto também.
+                    # if len(history_records) > 5000: # Ex: manter os últimos 5000 registos em memória
                     #     history_records.pop(0)
 
                     # Salvar em CSV (pode ser feito menos frequentemente para performance, ex: a cada 1min)
                     try:
                         df_history = pd.DataFrame(history_records)
-                        # Garante que a pasta 'dados' existe
                         os.makedirs("dados", exist_ok=True)
                         df_history.to_csv("dados/historico_aviario.csv", index=False)
                     except Exception as csv_e:
                         print(f"❌ Erro ao salvar histórico em CSV: {csv_e}")
 
-            # Enviar dados atualizados para todos os clientes WebSocket conectados
-            # Usamos uma cópia para evitar que o dicionário seja modificado durante a serialização
+            # Enviar DADOS ATUALIZADOS para todos os clientes WebSocket conectados
+            # Isso é para TODOS os dados (sensores e atuadores) para a UI principal,
+            # independentemente de virem de um sensor ou de um estado de atuador.
             socketio.emit('new_sensor_data', current_sensor_data.copy())
             print("📤 SocketIO Emitido: new_sensor_data")
 
@@ -164,35 +182,27 @@ def handle_disconnect():
 
 @socketio.on('toggle_actuator')
 def handle_toggle_actuator(data):
-    # data deve ser um dicionário como {'type': 'ventoinha', 'state': 1}
     actuator_type = data.get('type')
     new_state = int(data.get('state')) # Convert to int (0 or 1)
     
     print(f"⚡ Recebido pedido de toggle para {actuator_type}: {new_state}")
 
-    if actuator_type in ["ventoinha", "janela"]:
-        # Publica no tópico de controlo para o ESP32
-        # É uma boa prática ter um tópico para cada atuador se for para controlar individualmente
-        # ou um tópico geral e um payload JSON mais complexo
-        
-        # Exemplo com tópico específico para cada atuador:
-        mqtt_client.publish(f"aviario/atuadores/{actuator_type}/set", str(new_state))
-        print(f"📤 MQTT Publicado: aviario/atuadores/{actuator_type}/set = {new_state}")
-
-        # Opcional: Atualiza o estado localmente imediatamente para dar feedback rápido na UI
-        # (Idealmente, esperaríamos a confirmação do ESP32 via MQTT, mas para feedback rápido é útil)
-        with data_lock:
-            current_sensor_data[actuator_type] = bool(new_state)
-            current_sensor_data["timestamp"] = datetime.now().strftime("%H:%M:%S")
-            socketio.emit('new_sensor_data', current_sensor_data.copy()) # Atualiza UI de todos
-
+    if actuator_type == "ventoinha":
+        # Publica o comando para o ESP32
+        mqtt_client.publish(TOPICO_VENTOINHA_SET, str(new_state))
+        print(f"📤 MQTT Publicado: {TOPICO_VENTOINHA_SET} = {new_state}")
+    elif actuator_type == "janela":
+        # Publica o comando para o ESP32
+        mqtt_client.publish(TOPICO_JANELA_SET, str(new_state))
+        print(f"📤 MQTT Publicado: {TOPICO_JANELA_SET} = {new_state}")
     else:
         print(f"⚠️ Atuador desconhecido: {actuator_type}")
 
+    # Removido: A atualização da UI do atuador vai acontecer quando o ESP32
+    # publicar o estado REAL do atuador nos tópicos "aviario/ventoinha" ou "aviario/janela".
+    # Isso garante que a UI reflete sempre o estado físico do hardware.
+
 # --- Ponto de Entrada para a Aplicação ---
 if __name__ == '__main__':
-    # Quando em ambiente de produção, não usar debug=True
-    # Isso ativa o reloader, que pode causar a inicialização dupla da thread MQTT.
-    # Para desenvolvimento, pode-se usar, mas estar ciente do warning sobre threads.
     print("Iniciando servidor Flask-SocketIO...")
     socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)

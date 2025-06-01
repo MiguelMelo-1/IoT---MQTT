@@ -300,6 +300,8 @@
             document.getElementById('humidValue').innerText = data.humidade !== null ? data.humidade.toFixed(1) : '--.-';
             document.getElementById('lumiValue').innerText = data.luminosidade !== null ? data.luminosidade : '---';
             document.getElementById('gasValue').innerText = data.gas !== null ? (data.gas ? 'Sim' : 'Não') : '---';
+            document.getElementById('fanState').innerText = data.ventoinha ? 'Ligadas' : 'Desligadas';
+            document.getElementById('windowState').innerText = data.janela ? 'Abertas' : 'Fechadas';    
             
             document.getElementById('timestampValue').innerText = data.timestamp !== null ? data.timestamp : '--:--:--';
 
