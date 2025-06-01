@@ -45,26 +45,33 @@
             font-size: 0.9rem;
             color: #6c757d; /* Cinzento para as legendas */
         }
-        .control-btn {
-            width: 100%;
-            padding: 0.75rem;
-            font-size: 1.1rem;
-            border-radius: 0.5rem;
-            margin-bottom: 10px;
+        /* --- Novo CSS para os quadrados atuadores clicáveis --- */
+        .actuator-square {
+            cursor: pointer; /* Indica que é clicável */
+            transition: transform 0.2s, box-shadow 0.2s; /* Animação ao passar o rato/clicar */
         }
-        .control-btn.btn-on {
-            background-color: #28a745; /* Verde para ON */
-            border-color: #28a745;
-            color: white;
+        .actuator-square:hover {
+            transform: translateY(-3px); /* Pequeno efeito ao passar o rato */
+            box-shadow: 0 6px 12px rgba(0,0,0,0.1); /* Sombra mais forte */
         }
-        .control-btn.btn-off {
-            background-color: #dc3545; /* Vermelho para OFF */
-            border-color: #dc3545;
-            color: white;
+        .actuator-square:active {
+            transform: translateY(0); /* Efeito de "pressionar" */
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
-        .control-btn i {
-            margin-right: 8px;
+        /* Cores para os estados dos atuadores */
+        .actuator-square.state-on {
+            background-color: #d4edda !important; /* Verde claro */
+            border: 1px solid #28a745;
         }
+        .actuator-square.state-off {
+            background-color: #f8d7da !important; /* Vermelho claro */
+            border: 1px solid #dc3545;
+        }
+        .actuator-square.state-unknown {
+            background-color: #fefefe !important; /* Branco/Cinza claro */
+            border: 1px solid #ced4da;
+        }
+
         /* Responsividade para tablets - Ajusta o tamanho das colunas dos métricos */
         @media (min-width: 768px) {
             .sensor-metrics .col-md-4 {
@@ -73,26 +80,21 @@
             }
         }
 
-        /* --- Novo CSS para controlar a altura do gráfico --- */
+        /* --- CSS para controlar a altura do gráfico --- */
         .chart-container {
-            position: relative; /* Importante para o Chart.js */
-            height: 300px; /* **Define a altura fixa para o gráfico em ecrãs pequenos** */
+            position: relative;
+            height: 300px;
             width: 100%;
-            margin: auto; /* Centraliza o contêiner */
-            /* overflow: hidden; */ /* Descomenta se quiseres cortar conteúdo que transborda */
+            margin: auto;
         }
-
-        /* Ajustar a altura em ecrãs maiores (ex: tablets) */
         @media (min-width: 768px) {
             .chart-container {
-                height: 350px; /* Um pouco mais alto para tablets */
+                height: 350px;
             }
         }
-
-        /* Ajustar a altura em ecrãs ainda maiores (ex: desktops) */
         @media (min-width: 992px) {
             .chart-container {
-                height: 400px; /* Ainda mais alto para desktops */
+                height: 400px;
             }
         }
     </style>
@@ -139,15 +141,15 @@
                             <div class="metric-label">Gás Detetado</div>
                         </div>
                     </div>
-                     <div class="col-6 col-md-4">
-                        <div class="p-3 bg-light rounded shadow-sm">
+                    <div class="col-6 col-md-4">
+                        <div class="p-3 bg-light rounded shadow-sm actuator-square" id="ventoinhaSquare" data-actuator-type="ventoinha" data-state="0">
                             <i class="fas fa-fan fa-2x mb-2 text-secondary"></i>
                             <div class="metric-value" id="fanState">---</div>
                             <div class="metric-label">Ventoinhas</div>
                         </div>
                     </div>
                     <div class="col-6 col-md-4">
-                        <div class="p-3 bg-light rounded shadow-sm">
+                        <div class="p-3 bg-light rounded shadow-sm actuator-square" id="janelaSquare" data-actuator-type="janela" data-state="0">
                             <i class="fas fa-window-restore fa-2x mb-2 text-secondary"></i>
                             <div class="metric-value" id="windowState">---</div>
                             <div class="metric-label">Janelas</div>
@@ -155,26 +157,6 @@
                     </div>
                 </div>
                 <p class="text-end mt-3 mb-0"><small class="text-muted">Última atualização: <span id="timestampValue">--:--:--</span></small></p>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-header">
-                🛠️ Controlo Manual dos Atuadores
-            </div>
-            <div class="card-body">
-                <div class="row g-3">
-                    <div class="col-12 col-md-6">
-                        <button id="toggleVentoinha" class="btn btn-primary control-btn" data-state="0">
-                            <i class="fas fa-fan"></i> Ventoinhas: Desligadas
-                        </button>
-                    </div>
-                    <div class="col-12 col-md-6">
-                        <button id="toggleJanela" class="btn btn-primary control-btn" data-state="0">
-                            <i class="fas fa-window-restore"></i> Janelas: Fechadas
-                        </button>
-                    </div>
-                </div>
             </div>
         </div>
 
@@ -212,130 +194,105 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
 
     <script>
-        const socket = io(); // Conecta ao servidor SocketIO
-        let sensorChart; // Variável para a instância do Chart.js
+        const socket = io();
+        let sensorChart;
 
-        // --- Configuração dos Limites ---
-        const MAX_CHART_DATA_POINTS = 60; // Número máximo de pontos no gráfico (ex: para 1 min a 1 seg/ponto)
-        const MAX_TABLE_ROWS = 15;       // Número máximo de linhas na tabela do histórico
+        const MAX_CHART_DATA_POINTS = 60;
+        const MAX_TABLE_ROWS = 15;
 
         // Função para inicializar o gráfico
         function initChart() {
-            const ctx = document.getElementById('sensorChart').getContext('2d');
-            sensorChart = new Chart(ctx, {
+            const ctx = document.getElementById('sensorChart');
+            if (!ctx) {
+                console.error("Erro: Canvas para o gráfico não encontrado! ID 'sensorChart' está incorreto ou ausente.");
+                return;
+            }
+            sensorChart = new Chart(ctx.getContext('2d'), {
                 type: 'line',
                 data: {
-                    labels: [], // Horas
+                    labels: [],
                     datasets: [
-                        {
-                            label: 'Temperatura (ºC)',
-                            data: [],
-                            borderColor: 'rgba(0, 123, 255, 0.8)', // Azul
-                            backgroundColor: 'rgba(0, 123, 255, 0.2)',
-                            fill: false,
-                            tension: 0.1,
-                            pointRadius: 3, // Tamanho dos pontos
-                            pointHoverRadius: 5
-                        },
-                        {
-                            label: 'Humidade (%)',
-                            data: [],
-                            borderColor: 'rgba(23, 162, 184, 0.8)', // Ciano
-                            backgroundColor: 'rgba(23, 162, 184, 0.2)',
-                            fill: false,
-                            tension: 0.1,
-                            pointRadius: 3,
-                            pointHoverRadius: 5
-                        },
-                        {
-                            label: 'Luminosidade',
-                            data: [],
-                            borderColor: 'rgba(255, 193, 7, 0.8)', // Amarelo
-                            backgroundColor: 'rgba(255, 193, 7, 0.2)',
-                            fill: false,
-                            tension: 0.1,
-                            pointRadius: 3,
-                            pointHoverRadius: 5
-                        }
+                        { label: 'Temperatura (ºC)', data: [], borderColor: 'rgba(0, 123, 255, 0.8)', backgroundColor: 'rgba(0, 123, 255, 0.2)', fill: false, tension: 0.1, pointRadius: 3, pointHoverRadius: 5 },
+                        { label: 'Humidade (%)', data: [], borderColor: 'rgba(23, 162, 184, 0.8)', backgroundColor: 'rgba(23, 162, 184, 0.2)', fill: false, tension: 0.1, pointRadius: 3, pointHoverRadius: 5 },
+                        { label: 'Luminosidade', data: [], borderColor: 'rgba(255, 193, 7, 0.8)', backgroundColor: 'rgba(255, 193, 7, 0.2)', fill: false, tension: 0.1, pointRadius: 3, pointHoverRadius: 5 }
                     ]
                 },
                 options: {
                     responsive: true,
-                    maintainAspectRatio: false, // Permite que o gráfico se ajuste à altura do contêiner
-                    animation: {
-                        duration: 0 // Desativa a animação para atualizações mais rápidas
-                    },
+                    maintainAspectRatio: false,
+                    animation: { duration: 0 },
                     scales: {
-                        x: {
-                            reverse: false, // Garante que o tempo avança da esquerda para a direita
-                            title: {
-                                display: true,
-                                text: 'Hora'
-                            }
-                        },
-                        y: {
-                            beginAtZero: false, // Pode ser false para escalas mais realistas
-                            title: {
-                                display: true,
-                                text: 'Valor'
-                            }
-                        }
+                        x: { reverse: false, title: { display: true, text: 'Hora' } },
+                        y: { beginAtZero: false, title: { display: true, text: 'Valor' } }
                     },
                     plugins: {
-                        legend: {
-                            position: 'top',
-                        },
-                        title: {
-                            display: true,
-                            text: 'Histórico de Sensores'
-                        }
+                        legend: { position: 'top' },
+                        title: { display: true, text: 'Histórico de Sensores' }
                     }
                 }
             });
         }
 
-        // Função para atualizar os valores dos sensores na UI
+        // Função para atualizar os valores dos sensores e atuadores na UI
         function updateSensorMetrics(data) {
+            // Atualiza os valores dos sensores principais
             document.getElementById('tempValue').innerText = data.temperatura !== null ? data.temperatura.toFixed(1) : '--.-';
             document.getElementById('humidValue').innerText = data.humidade !== null ? data.humidade.toFixed(1) : '--.-';
             document.getElementById('lumiValue').innerText = data.luminosidade !== null ? data.luminosidade : '---';
             document.getElementById('gasValue').innerText = data.gas !== null ? (data.gas ? 'Sim' : 'Não') : '---';
-            document.getElementById('fanState').innerText = data.ventoinha ? 'Ligadas' : 'Desligadas';
-            document.getElementById('windowState').innerText = data.janela ? 'Abertas' : 'Fechadas';    
             
             document.getElementById('timestampValue').innerText = data.timestamp !== null ? data.timestamp : '--:--:--';
 
-            // Atualiza os botões de controlo com base no estado atual dos atuadores
-            const toggleVentoinhaBtn = document.getElementById('toggleVentoinha');
-            const toggleJanelaBtn = document.getElementById('toggleJanela');
+            // --- ATUALIZAÇÃO DOS QUADRADOS DOS ATUADORES (AGORA TAMBÉM BOTÕES) ---
+            const ventoinhaSquare = document.getElementById('ventoinhaSquare');
+            const janelaSquare = document.getElementById('janelaSquare');
+            const fanStateText = document.getElementById('fanState');
+            const windowStateText = document.getElementById('windowState');
 
-            if (data.ventoinha !== null) {
-                toggleVentoinhaBtn.dataset.state = data.ventoinha ? '1' : '0';
-                toggleVentoinhaBtn.classList.remove('btn-primary', 'btn-on', 'btn-off'); // Remove classes anteriores
-                toggleVentoinhaBtn.classList.add(data.ventoinha ? 'btn-on' : 'btn-off'); // Adiciona a correta
-                toggleVentoinhaBtn.innerHTML = `<i class="fas fa-fan"></i> Ventoinhas: ${data.ventoinha ? 'Ligadas' : 'Desligadas'}`;
-            } else {
-                 toggleVentoinhaBtn.classList.remove('btn-on', 'btn-off');
-                 toggleVentoinhaBtn.classList.add('btn-primary'); // Volta para o estado padrão
-                 toggleVentoinhaBtn.innerHTML = `<i class="fas fa-fan"></i> Ventoinhas: ---`;
+            // Ventoinhas
+            if (ventoinhaSquare && fanStateText) { // Garante que os elementos HTML existem
+                if (data.ventoinha !== null) {
+                    const isVentoinhaOn = data.ventoinha;
+                    ventoinhaSquare.dataset.state = isVentoinhaOn ? '1' : '0'; // Atualiza o data-state
+                    fanStateText.innerText = isVentoinhaOn ? 'Ligadas' : 'Desligadas'; // Atualiza o texto
+                    
+                    // Atualiza as classes CSS para cores de estado
+                    ventoinhaSquare.classList.remove('state-on', 'state-off', 'state-unknown');
+                    ventoinhaSquare.classList.add(isVentoinhaOn ? 'state-on' : 'state-off');
+                } else { // Se o dado for null, volta para '---' e estado desconhecido
+                    fanStateText.innerText = '---';
+                    ventoinhaSquare.dataset.state = '0'; // Assume desligado/desconhecido para o clique
+                    ventoinhaSquare.classList.remove('state-on', 'state-off');
+                    ventoinhaSquare.classList.add('state-unknown');
+                }
             }
 
-            if (data.janela !== null) {
-                toggleJanelaBtn.dataset.state = data.janela ? '1' : '0';
-                toggleJanelaBtn.classList.remove('btn-primary', 'btn-on', 'btn-off');
-                toggleJanelaBtn.classList.add(data.janela ? 'btn-on' : 'btn-off');
-                toggleJanelaBtn.innerHTML = `<i class="fas fa-window-restore"></i> Janelas: ${data.janela ? 'Abertas' : 'Fechadas'}`;
-            } else {
-                toggleJanelaBtn.classList.remove('btn-on', 'btn-off');
-                toggleJanelaBtn.classList.add('btn-primary');
-                toggleJanelaBtn.innerHTML = `<i class="fas fa-window-restore"></i> Janelas: ---`;
+            // Janelas
+            if (janelaSquare && windowStateText) { // Garante que os elementos HTML existem
+                if (data.janela !== null) {
+                    const isJanelaOpen = data.janela;
+                    janelaSquare.dataset.state = isJanelaOpen ? '1' : '0'; // Atualiza o data-state
+                    windowStateText.innerText = isJanelaOpen ? 'Abertas' : 'Fechadas'; // Atualiza o texto
+
+                    // Atualiza as classes CSS para cores de estado
+                    janelaSquare.classList.remove('state-on', 'state-off', 'state-unknown');
+                    janelaSquare.classList.add(isJanelaOpen ? 'state-on' : 'state-off');
+                } else { // Se o dado for null, volta para '---' e estado desconhecido
+                    windowStateText.innerText = '---';
+                    janelaSquare.dataset.state = '0'; // Assume fechado/desconhecido para o clique
+                    janelaSquare.classList.remove('state-on', 'state-off');
+                    janelaSquare.classList.add('state-unknown');
+                }
             }
         }
 
         // Função para adicionar um novo registo ao histórico e atualizar o gráfico
         function addHistoryRecord(record) {
-            // --- Atualiza a tabela ---
             const tableBody = document.getElementById('historyTableBody');
+            if (!tableBody) {
+                console.error("Erro: Corpo da tabela de histórico não encontrado! ID 'historyTableBody' está incorreto ou ausente.");
+                return;
+            }
             const newRow = tableBody.insertRow(0); // Adiciona no topo da tabela
             newRow.insertCell(0).innerText = record.Hora;
             newRow.insertCell(1).innerText = record.Temperatura !== null ? record.Temperatura.toFixed(1) : '---';
@@ -360,13 +317,15 @@
 
                 // Remove o ponto de dados mais antigo se exceder o limite
                 if (sensorChart.data.labels.length > MAX_CHART_DATA_POINTS) {
-                    sensorChart.data.labels.shift(); // Remove a primeira hora
-                    sensorChart.data.datasets[0].data.shift(); // Remove a primeira temperatura
-                    sensorChart.data.datasets[1].data.shift(); // Remove a primeira humidade
-                    sensorChart.data.datasets[2].data.shift(); // Remove a primeira luminosidade
+                    sensorChart.data.labels.shift();
+                    sensorChart.data.datasets[0].data.shift();
+                    sensorChart.data.datasets[1].data.shift();
+                    sensorChart.data.datasets[2].data.shift();
                 }
                 
                 sensorChart.update(); // IMPORANTE: Atualiza o gráfico para refletir as mudanças
+            } else {
+                console.warn("Gráfico não inicializado. Não é possível adicionar dados ao histórico do gráfico.");
             }
         }
 
@@ -377,11 +336,11 @@
 
         socket.on('new_sensor_data', (data) => {
             console.log('Dados de sensor recebidos:', data);
-            updateSensorMetrics(data); // Atualiza os métricos principais
+            updateSensorMetrics(data); // Atualiza os métricos principais e os quadrados/botões
 
             // Adiciona ao histórico apenas se os dados de sensor estiverem completos
             // e se o timestamp mudou para evitar duplicados muito rápidos
-            const lastRecordTime = sensorChart.data.labels.length > 0 ? sensorChart.data.labels[sensorChart.data.labels.length - 1] : null;
+            const lastRecordTime = sensorChart && sensorChart.data.labels.length > 0 ? sensorChart.data.labels[sensorChart.data.labels.length - 1] : null;
             if (data.temperatura !== null && data.humidade !== null && data.luminosidade !== null && data.gas !== null && data.timestamp !== lastRecordTime) {
                  addHistoryRecord({
                     Hora: data.timestamp,
@@ -389,21 +348,25 @@
                     Humidade: data.humidade,
                     Luminosidade: data.luminosidade,
                     Gás: data.gas ? 'Sim' : 'Não',
-                    Ventoinhas_Estado: data.ventoinha ? 'Ligadas' : 'Desligadas',
-                    Janelas_Estado: data.janela ? 'Abertas' : 'Fechadas'
+                    // Garante que o estado dos atuadores para o histórico vem dos dados recebidos
+                    Ventoinhas_Estado: data.ventoinha !== null ? (data.ventoinha ? 'Ligadas' : 'Desligadas') : '---',
+                    Janelas_Estado: data.janela !== null ? (data.janela ? 'Abertas' : 'Fechadas') : '---'
                 });
             }
         });
 
         socket.on('initial_history', (historyArray) => {
             console.log('Histórico inicial recebido:', historyArray);
-            
-            // Limpa o gráfico e a tabela antes de carregar o histórico inicial
             if (sensorChart) {
                 sensorChart.data.labels = [];
                 sensorChart.data.datasets.forEach(dataset => dataset.data = []);
             }
-            document.getElementById('historyTableBody').innerHTML = '';
+            const tableBody = document.getElementById('historyTableBody');
+            if (tableBody) {
+                tableBody.innerHTML = '';
+            } else {
+                console.error("Corpo da tabela de histórico não encontrado ao carregar histórico inicial.");
+            }
 
             // Adiciona os registos do histórico um a um (em ordem cronológica)
             // Reverse a array para adicionar do mais antigo para o mais recente,
@@ -416,21 +379,38 @@
         });
 
 
-        // === Event Listeners para os Botões de Controlo ===
-        document.getElementById('toggleVentoinha').addEventListener('click', function() {
-            let currentState = parseInt(this.dataset.state); // 0 ou 1
-            let newState = 1 - currentState; // Inverte o estado
-            socket.emit('toggle_actuator', { type: 'ventoinha', state: newState });
-        });
+        // === Event Listeners para os QUADRADOS-BOTÕES (no DOMContentLoaded) ===
+        document.addEventListener('DOMContentLoaded', () => {
+            const ventoinhaSquare = document.getElementById('ventoinhaSquare');
+            const janelaSquare = document.getElementById('janelaSquare');
 
-        document.getElementById('toggleJanela').addEventListener('click', function() {
-            let currentState = parseInt(this.dataset.state); // 0 ou 1
-            let newState = 1 - currentState; // Inverte o estado
-            socket.emit('toggle_actuator', { type: 'janela', state: newState });
-        });
+            if (ventoinhaSquare) {
+                ventoinhaSquare.addEventListener('click', function() {
+                    let currentState = parseInt(this.dataset.state); // Lê o estado atual do data-state
+                    let newState = 1 - currentState; // Inverte o estado
+                    socket.emit('toggle_actuator', { type: 'ventoinha', state: newState });
+                    console.log(`Comando enviado: ventoinha para ${newState}`);
+                    // O estado visual só será atualizado quando o ESP32 publicar de volta
+                });
+            } else {
+                console.error("Elemento 'ventoinhaSquare' não encontrado. O botão não será interativo.");
+            }
 
-        // Inicializa o gráfico quando a página carrega
-        window.onload = initChart;
+            if (janelaSquare) {
+                janelaSquare.addEventListener('click', function() {
+                    let currentState = parseInt(this.dataset.state); // Lê o estado atual do data-state
+                    let newState = 1 - currentState; // Inverte o estado
+                    socket.emit('toggle_actuator', { type: 'janela', state: newState });
+                    console.log(`Comando enviado: janela para ${newState}`);
+                    // O estado visual só será atualizado quando o ESP32 publicar de volta
+                });
+            } else {
+                console.error("Elemento 'janelaSquare' não encontrado. O botão não será interativo.");
+            }
+
+            // Inicializa o gráfico quando a página carrega e o DOM está pronto
+            initChart();
+        });
     </script>
 </body>
 </html>
