@@ -355,28 +355,28 @@
             }
         });
 
-        socket.on('initial_history', (historyArray) => {
-            console.log('Histórico inicial recebido:', historyArray);
-            if (sensorChart) {
-                sensorChart.data.labels = [];
-                sensorChart.data.datasets.forEach(dataset => dataset.data = []);
-            }
-            const tableBody = document.getElementById('historyTableBody');
-            if (tableBody) {
-                tableBody.innerHTML = '';
-            } else {
-                console.error("Corpo da tabela de histórico não encontrado ao carregar histórico inicial.");
-            }
+        // socket.on('initial_history', (historyArray) => {
+        //     console.log('Histórico inicial recebido:', historyArray);
+        //     if (sensorChart) {
+        //         sensorChart.data.labels = [];
+        //         sensorChart.data.datasets.forEach(dataset => dataset.data = []);
+        //     }
+        //     const tableBody = document.getElementById('historyTableBody');
+        //     if (tableBody) {
+        //         tableBody.innerHTML = '';
+        //     } else {
+        //         console.error("Corpo da tabela de histórico não encontrado ao carregar histórico inicial.");
+        //     }
 
-            // Adiciona os registos do histórico um a um (em ordem cronológica)
-            // Reverse a array para adicionar do mais antigo para o mais recente,
-            // garantindo a ordem correta no gráfico e na tabela
-            historyArray.reverse().forEach(record => {
-                addHistoryRecord(record);
-            });
-            // O gráfico já é atualizado dentro de addHistoryRecord, mas uma final update pode ser útil
-            if (sensorChart) sensorChart.update();
-        });
+        //     // Adiciona os registos do histórico um a um (em ordem cronológica)
+        //     // Reverse a array para adicionar do mais antigo para o mais recente,
+        //     // garantindo a ordem correta no gráfico e na tabela
+        //     historyArray.reverse().forEach(record => {
+        //         addHistoryRecord(record);
+        //     });
+        //     // O gráfico já é atualizado dentro de addHistoryRecord, mas uma final update pode ser útil
+        //     if (sensorChart) sensorChart.update();
+        // });
 
 
         // === Event Listeners para os QUADRADOS-BOTÕES (no DOMContentLoaded) ===

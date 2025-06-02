@@ -1,6 +1,6 @@
 runtime: python311
 env: standard
-entrypoint: gunicorn -c gunicorn.conf.py app:app
+entrypoint: gunicorn -b :$PORT --worker-class eventlet --workers=1 --timeout=120 app:app
 instance_class: F1
 
 handlers:
