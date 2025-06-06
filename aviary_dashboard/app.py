@@ -5,6 +5,9 @@ import paho.mqtt.client as mqtt
 import json
 from datetime import datetime
 import threading
+from firebase_admin import db
+
+from firebase import guardar_dados_em_firebase
 
 # --- Configuração da Aplicação Flask ---
 app = Flask(__name__)
@@ -65,6 +68,8 @@ def on_message(client, userdata, msg):
 
         current_state["timestamp"] = datetime.now().strftime("%H:%M:%S")
 
+        guardar_dados_em_firebase(current_state)
+
         socketio.emit('new_sensor_data', current_state)
         print(f"📦 Conteúdo emitido: {current_state}")
 
@@ -94,6 +99,20 @@ print("🚀 Thread MQTT iniciada.")
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/api/historico')
+def get_historico():
+    try:
+        ref = db.reference('aviario/historico')
+        all_data = ref.order_by_key().limit_to_last(15).get()
+        # Inverter para ordem cronológica (mais antigo primeiro)
+        if isinstance(all_data, dict):
+            lista_ordenada = sorted(all_data.items(), key=lambda x: x[0])
+            return jsonify([item[1] for item in lista_ordenada])
+        return jsonify([])
+    except Exception as e:
+        print(f"❌ Erro ao ler histórico do Firebase: {e}")
+        return jsonify([]), 500
 
 # --- Eventos SocketIO ---
 @socketio.on('connect')
