@@ -388,7 +388,7 @@
                     let currentState = parseInt(this.dataset.state); // Lê o estado atual do data-state
                     let newState = 1 - currentState; // Inverte o estado
                     socket.emit('toggle_actuator', { type: 'ventoinha', state: newState });
-                    console.log(`Comando enviado: ventoinha para ${newState}`);
+                    console.log('Comando enviado: ventoinha para ${newState}');
                     // O estado visual só será atualizado quando o ESP32 publicar de volta
                 });
             } else {
@@ -400,7 +400,7 @@
                     let currentState = parseInt(this.dataset.state); // Lê o estado atual do data-state
                     let newState = 1 - currentState; // Inverte o estado
                     socket.emit('toggle_actuator', { type: 'janela', state: newState });
-                    console.log(`Comando enviado: janela para ${newState}`);
+                    console.log('Comando enviado: janela para ${newState}');
                     // O estado visual só será atualizado quando o ESP32 publicar de volta
                 });
             } else {

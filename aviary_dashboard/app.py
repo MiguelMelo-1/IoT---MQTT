@@ -68,9 +68,9 @@ def on_message(client, userdata, msg):
 
         current_state["timestamp"] = datetime.now().strftime("%H:%M:%S")
 
-        guardar_dados_em_firebase(current_state)
 
         socketio.emit('new_sensor_data', current_state)
+        guardar_dados_em_firebase(current_state)
         print(f"📦 Conteúdo emitido: {current_state}")
 
     except ValueError as e:

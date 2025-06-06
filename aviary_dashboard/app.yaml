@@ -8,7 +8,7 @@ handlers:
   script: auto
   secure: always
 
-# Opcional, mas útil:
 env_variables:
   MQTT_BROKER_HOST: "test.mosquitto.org"
   MQTT_BROKER_PORT: "1883"
+  GOOGLE_APPLICATION_CREDENTIALS: "aviario-cloud-firebase-adminsdk-fbsvc-8c884a6463.json"
